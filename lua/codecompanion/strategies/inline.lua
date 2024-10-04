@@ -538,7 +538,10 @@ function Inline:append_to_buf(content)
     local substring = content:sub(index, newline - 1)
 
     if #substring > 0 then
-      api.nvim_buf_set_text(bufnr, line, col, line, col, { substring })
+      local line_content = vim.api.nvim_buf_get_lines(bufnr, line, line + 1, false)[1] or ""
+      local line_length = #line_content
+      col = math.max(0, math.min(col, line_length))
+      vim.api.nvim_buf_set_text(bufnr, line, col, line, col, { substring })
       col = col + #substring
     end
 
