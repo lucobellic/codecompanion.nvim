@@ -13,7 +13,7 @@ local api = vim.api
 ---@param str string
 ---@return string
 local function unescape_breaks(str)
-  if not str then
+  if type(str) ~= "string" then
     return str
   end
   return str:gsub("\\n", "\n")
