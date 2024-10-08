@@ -41,7 +41,7 @@ end
 
 ---Run a prompt from the prompt library
 ---@param name string
----@param args table
+---@param args table?
 ---@return nil
 M.prompt = function(name, args)
   local context = context_utils.get(api.nvim_get_current_buf(), args)
@@ -145,7 +145,7 @@ M.chat = function(args)
     end
   end
 
-  local has_messages = util.count(messages) > 0
+  local has_messages = not vim.tbl_isempty(messages)
 
   return require("codecompanion.strategies.chat").new({
     context = context,
