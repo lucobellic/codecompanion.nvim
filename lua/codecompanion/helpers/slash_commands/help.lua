@@ -1,8 +1,9 @@
-local config = require("codecompanion").config
+local config = require("codecompanion.config")
 
 local file_utils = require("codecompanion.utils.files")
 local log = require("codecompanion.utils.log")
 local tokens_utils = require("codecompanion.utils.tokens")
+local util = require("codecompanion.utils.util")
 local ts = vim.treesitter
 
 CONSTANTS = {
@@ -62,7 +63,7 @@ local function trim_content(content, tag)
 end
 
 ---Output from the slash command in the chat buffer
----@param SlashCommand CodeCompanion.SlashCommandHelp
+---@param SlashCommand CodeCompanion.SlashCommand
 ---@param selected table The selected item from the provider { relative_path = string, path = string }
 ---@return nil
 local function output(SlashCommand, selected)
@@ -85,14 +86,25 @@ local function output(SlashCommand, selected)
   end
 
   local Chat = SlashCommand.Chat
-  Chat:append_to_buf({ content = "[!" .. CONSTANTS.NAME .. ": `" .. selected.tag .. "`]\n" })
-  Chat:append_to_buf({ content = "```" .. ft .. "\n" .. content .. "\n```" })
-  Chat:fold_code()
+  Chat:add_message({
+    role = config.constants.USER_ROLE,
+    content = string.format(
+      [[Here is some additional context related to the tag `%s`:
+
+```%s
+%s
+```]],
+      selected.tag,
+      ft,
+      content
+    ),
+  }, { visible = false })
+  util.notify(string.format("%s help file added to chat", selected.tag))
 end
 
 local Providers = {
   ---The Telescope provider
-  ---@param SlashCommand CodeCompanion.SlashCommandHelp
+  ---@param SlashCommand CodeCompanion.SlashCommand
   ---@return nil
   telescope = function(SlashCommand)
     local ok, telescope = pcall(require, "telescope.builtin")
@@ -120,7 +132,7 @@ local Providers = {
     })
   end,
 
-  ---@param SlashCommand CodeCompanion.SlashCommandHelp
+  ---@param SlashCommand CodeCompanion.SlashCommand
   ---@return nil
   mini_pick = function(SlashCommand)
     local ok, mini_pick = pcall(require, "mini.pick")
@@ -144,26 +156,25 @@ local Providers = {
   ---TODO: The fzf-lua provider
 }
 
----@class CodeCompanion.SlashCommandHelp
-local SlashCommandHelp = {}
+---@class CodeCompanion.SlashCommand.Help: CodeCompanion.SlashCommand
+---@field new fun(args: CodeCompanion.SlashCommand): CodeCompanion.SlashCommand.Help
+---@field execute fun(self: CodeCompanion.SlashCommand.Help)
+local SlashCommand = {}
 
----@class CodeCompanion.SlashCommandHelp
----@field Chat CodeCompanion.Chat The chat buffer
----@field config table The config of the slash command
----@field context table The context of the chat buffer from the completion menu
-function SlashCommandHelp.new(args)
+---@param args CodeCompanion.SlashCommand
+function SlashCommand.new(args)
   local self = setmetatable({
     Chat = args.Chat,
     config = args.config,
     context = args.context,
-  }, { __index = SlashCommandHelp })
+  }, { __index = SlashCommand })
 
   return self
 end
 
 ---Execute the slash command
 ---@return nil
-function SlashCommandHelp:execute()
+function SlashCommand:execute()
   if self.config.opts and self.config.opts.provider then
     local provider = Providers[self.config.opts.provider]
     if not provider then
@@ -175,4 +186,4 @@ function SlashCommandHelp:execute()
   end
 end
 
-return SlashCommandHelp
+return SlashCommand

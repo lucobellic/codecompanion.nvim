@@ -1,7 +1,9 @@
 local adapters = require("codecompanion.adapters")
 local client = require("codecompanion.http")
+local config = require("codecompanion.config")
 
 local log = require("codecompanion.utils.log")
+local util = require("codecompanion.utils.util")
 
 local fmt = string.format
 
@@ -9,26 +11,25 @@ CONSTANTS = {
   NAME = "Fetch",
 }
 
----@class CodeCompanion.SlashCommandFetch
-local SlashCommandFetch = {}
+---@class CodeCompanion.SlashCommand.Fetch: CodeCompanion.SlashCommand
+---@field new fun(args: CodeCompanion.SlashCommand): CodeCompanion.SlashCommand.Fetch
+---@field execute fun(self: CodeCompanion.SlashCommand.Fetch)
+local SlashCommand = {}
 
----@class CodeCompanion.SlashCommandFetch
----@field Chat CodeCompanion.Chat The chat buffer
----@field config table The config of the slash command
----@field context table The context of the chat buffer from the completion menu
-function SlashCommandFetch.new(args)
+---@param args CodeCompanion.SlashCommand
+function SlashCommand.new(args)
   local self = setmetatable({
     Chat = args.Chat,
     config = args.config,
     context = args.context,
-  }, { __index = SlashCommandFetch })
+  }, { __index = SlashCommand })
 
   return self
 end
 
 ---Execute the slash command
 ---@return nil
-function SlashCommandFetch:execute()
+function SlashCommand:execute()
   local ok, adapter = pcall(require, "codecompanion.adapters.non_llm." .. self.config.opts.adapter)
   if not ok then
     ok, adapter = pcall(loadfile, self.config.opts.provider)
@@ -79,11 +80,11 @@ function SlashCommandFetch:execute()
             )
 
             self.Chat:add_message({
-              role = "user",
+              role = config.constants.USER_ROLE,
               content = content,
             }, { visible = false })
 
-            return vim.notify(fmt("Added the data from %s", input), vim.log.levels.INFO, { title = "CodeCompanion" })
+            return util.notify(fmt("Added the page contents for: %s", input))
           end
           if chunk.code >= 400 then
             return log:error("Error: %s", chunk.body.data)
@@ -93,4 +94,4 @@ function SlashCommandFetch:execute()
   end)
 end
 
-return SlashCommandFetch
+return SlashCommand

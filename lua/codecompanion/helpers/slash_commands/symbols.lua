@@ -1,6 +1,7 @@
-local config = require("codecompanion").config
+local config = require("codecompanion.config")
 
 local log = require("codecompanion.utils.log")
+local util = require("codecompanion.utils.util")
 
 ---The Tree-sitter queries below are used to extract symbols from the buffer
 ---where the chat was initiated from. If you'd like to add more support
@@ -76,26 +77,25 @@ local Queries = {
 ]],
 }
 
----@class CodeCompanion.SlashCommandSymbols
-local SlashCommandSymbols = {}
+---@class CodeCompanion.SlashCommand.Symbols: CodeCompanion.SlashCommand
+---@field new fun(args: CodeCompanion.SlashCommand): CodeCompanion.SlashCommand.Symbols
+---@field execute fun(self: CodeCompanion.SlashCommand.Symbols)
+local SlashCommand = {}
 
----@class CodeCompanion.SlashCommandSymbols
----@field Chat CodeCompanion.Chat The chat buffer
----@field config table The config of the slash command
----@field context table The context of the chat buffer from the completion menu
-function SlashCommandSymbols.new(args)
+---@param args CodeCompanion.SlashCommand
+function SlashCommand.new(args)
   local self = setmetatable({
     Chat = args.Chat,
     config = args.config,
     context = args.context,
-  }, { __index = SlashCommandSymbols })
+  }, { __index = SlashCommand })
 
   return self
 end
 
 ---Execute the slash command
 ---@return nil
-function SlashCommandSymbols:execute()
+function SlashCommand:execute()
   if not config.opts.send_code and (self.config.opts and self.config.opts.contains_code) then
     return log:warn("Sending of code has been disabled")
   end
@@ -160,20 +160,24 @@ function SlashCommandSymbols:execute()
 
   if #symbols == 0 then
     log:info("No symbols found in the buffer")
-    return vim.notify("No symbols found in the buffer", "info", { title = "CodeCompanion" })
+    util.notify("No symbols found in the buffer")
   end
 
   local content = table.concat(symbols, "\n")
-  Chat:append_to_buf({ content = "[!Symbols]\n" })
-  Chat:append_to_buf({
+  Chat:add_message({
+    role = config.constants.USER_ROLE,
     content = string.format(
-      "```txt\nFilename: %s\nFiletype: %s\n<symbols>\n%s\n</symbols>\n```\n",
+      [[Here is a symbolic outline of the file `%s` with filetype `%s`:
+
+<symbols>
+%s
+</symbols>]],
       Chat.context.filename,
       Chat.context.filetype,
       content
     ),
-  })
-  Chat:fold_code()
+  }, { visible = false })
+  util.notify("Symbolic outline added to chat")
 end
 
-return SlashCommandSymbols
+return SlashCommand

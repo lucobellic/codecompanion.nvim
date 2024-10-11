@@ -1,5 +1,5 @@
 local adapters = require("codecompanion.adapters")
-local config = require("codecompanion").config
+local config = require("codecompanion.config")
 
 local log = require("codecompanion.utils.log")
 
@@ -66,7 +66,7 @@ function Strategies:chat()
   local function chat(input)
     if input then
       table.insert(messages, {
-        role = "user",
+        role = config.constants.USER_ROLE,
         content = input,
       })
     end

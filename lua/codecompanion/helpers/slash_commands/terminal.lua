@@ -1,27 +1,29 @@
+local config = require("codecompanion.config")
+local util = require("codecompanion.utils.util")
+
 CONSTANTS = {
   NAME = "Terminal Output",
 }
 
----@class CodeCompanion.SlashCommandTerminal
-local SlashCommandTerminal = {}
+---@class CodeCompanion.SlashCommand.Terminal: CodeCompanion.SlashCommand
+---@field new fun(args: CodeCompanion.SlashCommand): CodeCompanion.SlashCommand.Terminal
+---@field execute fun(self: CodeCompanion.SlashCommand.Terminal)
+local SlashCommand = {}
 
----@class CodeCompanion.SlashCommandTerminal
----@field Chat CodeCompanion.Chat The chat buffer
----@field config table The config of the slash command
----@field context table The context of the chat buffer from the completion menu
-function SlashCommandTerminal.new(args)
+---@param args CodeCompanion.SlashCommand
+function SlashCommand.new(args)
   local self = setmetatable({
     Chat = args.Chat,
     config = args.config,
     context = args.context,
-  }, { __index = SlashCommandTerminal })
+  }, { __index = SlashCommand })
 
   return self
 end
 
 ---Execute the slash command
 ---@return nil
-function SlashCommandTerminal:execute()
+function SlashCommand:execute()
   local terminal_buf = _G.codecompanion_last_terminal
   if not terminal_buf then
     return
@@ -29,20 +31,19 @@ function SlashCommandTerminal:execute()
   local content = vim.api.nvim_buf_get_lines(terminal_buf, 0, -1, false)
 
   local Chat = self.Chat
-
-  Chat:append_to_buf({ content = "[!" .. CONSTANTS.NAME .. "]\n" })
-  Chat:append_to_buf({
+  Chat:add_message({
+    role = config.constants.USER_ROLE,
     content = string.format(
-      [[```
-Buffer Number: %s
-Output:
+      [[Here is the terminal output for buffer number `%s`:
+
+<terminal>
 %s
-```]],
+</terminal>]],
       terminal_buf,
       table.concat(content, "\n")
     ),
-  })
-  Chat:fold_code()
+  }, { visible = false })
+  util.notify("Terminal output added to chat")
 end
 
-return SlashCommandTerminal
+return SlashCommand

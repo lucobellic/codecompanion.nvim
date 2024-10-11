@@ -1,6 +1,6 @@
 local adapters = require("codecompanion.adapters")
 local client = require("codecompanion.http")
-local config = require("codecompanion").config
+local config = require("codecompanion.config")
 local keymaps = require("codecompanion.utils.keymaps")
 local schema = require("codecompanion.schema")
 
@@ -22,10 +22,6 @@ local CONSTANTS = {
 
   STATUS_ERROR = "error",
   STATUS_SUCCESS = "success",
-
-  USER_ROLE = "user",
-  LLM_ROLE = "llm",
-  SYSTEM_ROLE = "system",
 
   BLANK_DESC = "[No messages]",
 }
@@ -137,7 +133,7 @@ local function buf_parse_message(bufnr)
 end
 
 ---@class CodeCompanion.Chat
----@return CodeCompanion.ToolExecuteResult|nil
+---@return nil
 local function buf_parse_tools(chat)
   local assistant_parser = vim.treesitter.get_parser(chat.bufnr, "markdown")
   local assistant_query = vim.treesitter.query.parse(
@@ -215,7 +211,6 @@ local last_chat = {}
 ---@field context table The context of the buffer that the chat was initiated from
 ---@field current_request table|nil The current request being executed
 ---@field current_tool table The current tool being executed
----@field has_folded_code boolean Has the code been folded?
 ---@field header_ns integer The namespace for the virtual text that appears in the header
 ---@field id integer The unique identifier for the chat
 ---@field intro_message? boolean Whether the welcome message has been shown
@@ -246,10 +241,9 @@ function Chat.new(args)
   local self = setmetatable({
     opts = args,
     context = args.context,
-    has_folded_code = false,
     header_ns = api.nvim_create_namespace(CONSTANTS.NS_HEADER),
     id = id,
-    last_role = args.last_role or CONSTANTS.USER_ROLE,
+    last_role = args.last_role or config.constants.USER_ROLE,
     messages = args.messages or {},
     status = "",
     tokens = args.tokens,
@@ -399,15 +393,15 @@ function Chat:render()
 
   local function add_messages_to_buf(msgs)
     for i, msg in ipairs(msgs) do
-      if msg.role ~= CONSTANTS.SYSTEM_ROLE or (msg.opts and msg.opts.visible ~= false) then
+      if msg.role ~= config.constants.SYSTEM_ROLE or (msg.opts and msg.opts.visible ~= false) then
         if i > 1 and self.last_role ~= msg.role then
           spacer()
         end
 
-        if msg.role == CONSTANTS.USER_ROLE and last_set_role ~= CONSTANTS.USER_ROLE then
+        if msg.role == config.constants.USER_ROLE and last_set_role ~= config.constants.USER_ROLE then
           set_header(user_role)
         end
-        if msg.role == CONSTANTS.LLM_ROLE and last_set_role ~= CONSTANTS.LLM_ROLE then
+        if msg.role == config.constants.LLM_ROLE and last_set_role ~= config.constants.LLM_ROLE then
           set_header(llm_role)
         end
 
@@ -615,7 +609,7 @@ function Chat:set_system_prompt()
     end
 
     local system_prompt = {
-      role = CONSTANTS.SYSTEM_ROLE,
+      role = config.constants.SYSTEM_ROLE,
       content = prompt,
     }
     system_prompt.id = make_id(system_prompt)
@@ -670,15 +664,18 @@ function Chat:on_cursor_moved()
 end
 
 ---Parse the last message for any variables
----@param message table|string
+---@param message table
 ---@return CodeCompanion.Chat
 function Chat:parse_msg_for_vars(message)
-  local vars = self.variables:parse(self, message.content)
+  local vars = self.variables:parse(self, message)
 
   if vars then
-    message.content = self.variables:replace(message.content, vars)
+    message.content = self.variables:replace(message.content)
     message.id = make_id({ role = message.role, content = message.content })
-    self:add_message({ role = CONSTANTS.USER_ROLE, content = vars.content }, { visible = false, tag = "variable" })
+    self:add_message(
+      { role = config.constants.USER_ROLE, content = message.content },
+      { visible = false, tag = "variable" }
+    )
   end
 
   return self
@@ -695,7 +692,7 @@ function Chat:add_tool(tool)
   -- Add the agent system prompt first
   if not self:has_tools() then
     self:add_message({
-      role = CONSTANTS.SYSTEM_ROLE,
+      role = config.constants.SYSTEM_ROLE,
       content = config.strategies.agent.tools.opts.system_prompt,
     }, { visible = false, tag = "tool" })
   end
@@ -705,7 +702,7 @@ function Chat:add_tool(tool)
   local resolved = self.tools.resolve(tool)
   if resolved then
     self:add_message(
-      { role = CONSTANTS.SYSTEM_ROLE, content = resolved.system_prompt(resolved.schema) },
+      { role = config.constants.SYSTEM_ROLE, content = resolved.system_prompt(resolved.schema) },
       { visible = false, tag = "tool" }
     )
   end
@@ -719,7 +716,7 @@ end
 ---@param var table The var from the config
 ---@return CodeCompanion.Chat
 function Chat:add_variable(var)
-  self:add_message({ role = CONSTANTS.USER_ROLE, content = var }, { visible = false, tag = "variable" })
+  self:add_message({ role = config.constants.USER_ROLE, content = var }, { visible = false, tag = "variable" })
 
   return self
 end
@@ -759,13 +756,22 @@ function Chat:submit(opts)
 
   local message = buf_parse_message(bufnr)
   if vim.tbl_isempty(message) then
-    return log:warn("No messages to submit")
+    local has_user_messages = vim
+      .iter(self.messages)
+      :filter(function(msg)
+        return msg.role == config.constants.USER_ROLE
+      end)
+      :totable()
+
+    if #has_user_messages == 0 then
+      return log:warn("No messages to submit")
+    end
   end
 
   --- If we're regenerating the response, we don't want to add the user's last
   --- message from the buffer as it sends unnecessary context to the LLM
-  if not opts.regenerate then
-    self:add_message({ role = CONSTANTS.USER_ROLE, content = message.content })
+  if not opts.regenerate and not vim.tbl_isempty(message) then
+    self:add_message({ role = config.constants.USER_ROLE, content = message.content })
   end
 
   message = self.messages[#self.messages]
@@ -802,7 +808,7 @@ function Chat:submit(opts)
         local result = self.adapter.handlers.chat_output(self.adapter, data)
         if result and result.status == CONSTANTS.STATUS_SUCCESS then
           if result.output.role then
-            result.output.role = CONSTANTS.LLM_ROLE
+            result.output.role = config.constants.LLM_ROLE
           end
           self.status = CONSTANTS.STATUS_SUCCESS
           self:append_to_buf(result.output)
@@ -819,9 +825,9 @@ end
 ---@param request table
 ---@return nil
 function Chat:done(request)
-  self:add_message({ role = CONSTANTS.LLM_ROLE, content = buf_parse_message(self.bufnr).content })
+  self:add_message({ role = config.constants.LLM_ROLE, content = buf_parse_message(self.bufnr).content })
 
-  self:append_to_buf({ role = CONSTANTS.USER_ROLE, content = "" })
+  self:append_to_buf({ role = config.constants.USER_ROLE, content = "" })
   self:display_tokens()
 
   if self.status == CONSTANTS.STATUS_SUCCESS and self:has_tools() then
@@ -835,9 +841,9 @@ end
 ---Regenerate the response from the LLM
 ---@return nil
 function Chat:regenerate()
-  if self.messages[#self.messages].role == CONSTANTS.LLM_ROLE then
+  if self.messages[#self.messages].role == config.constants.LLM_ROLE then
     table.remove(self.messages, #self.messages)
-    self:append_to_buf({ role = CONSTANTS.USER_ROLE, content = "_Regenerating response..._" })
+    self:append_to_buf({ role = config.constants.USER_ROLE, content = "_Regenerating response..._" })
     self:submit({ regenerate = true })
   end
 end
@@ -1088,19 +1094,6 @@ end
 ---Fold code under the user's heading in the chat buffer
 ---@return self
 function Chat:fold_code()
-  -- NOTE: Folding is super brittle in Neovim
-  if not self.has_folded_code then
-    api.nvim_create_autocmd("InsertLeave", {
-      group = self.aug,
-      buffer = self.bufnr,
-      desc = "Always fold code when a slash command is used",
-      callback = function()
-        self:fold_code()
-      end,
-    })
-    self.has_folded_code = true
-  end
-
   local query = vim.treesitter.query.parse(
     "markdown",
     [[
@@ -1120,7 +1113,6 @@ function Chat:fold_code()
 
   local parser = vim.treesitter.get_parser(self.bufnr, "markdown")
   local tree = parser:parse()[1]
-
   vim.o.foldmethod = "manual"
 
   local role

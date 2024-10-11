@@ -1,4 +1,4 @@
-local config = require("codecompanion").config
+local config = require("codecompanion.config")
 local log = require("codecompanion.utils.log")
 
 local CONSTANTS = {
@@ -60,6 +60,10 @@ end
 ---@param message table
 ---@return table|nil
 function Variables:find(message)
+  if not message.content then
+    return nil
+  end
+
   local found = {}
   for var, _ in pairs(self.vars) do
     if message.content:match("%f[%w" .. CONSTANTS.PREFIX .. "]" .. CONSTANTS.PREFIX .. var .. "%f[%W]") then
